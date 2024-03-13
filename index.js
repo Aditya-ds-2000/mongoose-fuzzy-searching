@@ -1,3 +1,5 @@
+const { Query } = require('mongoose');
+
 const {
   config: { DEFAULT_MIN_SIZE, DEFAULT_PREFIX_ONLY, validMiddlewares },
   createFields,
@@ -9,7 +11,7 @@ const {
   setTransformers,
   nGrams,
 } = require('./helpers');
-const { Query } = require('mongoose');
+const { buildQueryForFuzzySearch, isArray } = require('./helpers/utils');
 
 const parseArguments = (args, i1, i2) => {
   let options = {};
@@ -98,19 +100,7 @@ function fuzzySearch(...args) {
 
   const { callback, options } = parseArguments(queryArgs, 1, 2);
 
-  let search;
-
-  if (!isObject(options)) {
-    search = {
-      $text: {
-        $search: query,
-      },
-    };
-  } else {
-    search = {
-      $and: [{ $text: { $search: query } }, options],
-    };
-  }
+  const search = buildQueryForFuzzySearch(query, options);
 
   if (this instanceof Query) {
     return this.find.apply(this, [search, callback]);
@@ -122,6 +112,36 @@ function fuzzySearch(...args) {
     { sort: { confidenceScore: { $meta: 'textScore' } } },
     callback,
   ]);
+}
+
+function aggregateWithFuzzySearch(pipeline, options) {
+  if (typeof pipeline === 'undefined' || !isArray(pipeline)) {
+    throw new TypeError(
+      'aggregateWithFuzzySearch: First argument is mandatory and must be an array',
+    );
+  }
+
+  const fuzzyIdx = pipeline.findIndex((stage) => isObject(stage.$aggregateFS));
+
+  if (fuzzyIdx !== -1) {
+    const fuzzySearchStage = pipeline[fuzzyIdx];
+    const { exact, queryString } = getArgs(fuzzySearchStage.$aggregateFS);
+    const { checkPrefixOnly, defaultNgamMinSize } = getDefaultValues(fuzzySearchStage.$aggregateFS);
+
+    const query = exact
+      ? `"${queryString}"`
+      : nGrams(queryString, false, defaultNgamMinSize, checkPrefixOnly).join(' ');
+
+    const search = buildQueryForFuzzySearch(query);
+
+    const transformedFSStage = {
+      $match: search,
+    };
+
+    pipeline[fuzzyIdx] = transformedFSStage;
+  }
+
+  return this.aggregate.apply(this, [pipeline, options]);
 }
 
 /**
@@ -220,6 +240,10 @@ module.exports = function (schema, pluginOptions) {
 
   schema.statics.fuzzySearch = function (...args) {
     return fuzzySearch.apply(this, args);
+  };
+
+  schema.statics.aggregateWithFuzzySearch = function (...args) {
+    return aggregateWithFuzzySearch.apply(this, args);
   };
 
   schema.query.fuzzySearch = function (...args) {
