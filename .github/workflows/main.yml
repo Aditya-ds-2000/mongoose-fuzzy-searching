@@ -2,7 +2,7 @@ name: Create PR from Develop to Release
 
 on:
   schedule:
-    - cron: '45 11 * * *'  # Runs daily at 6 PM (UTC)
+    - cron: '50 11 * * *'  # Runs daily at 6 PM (UTC)
   workflow_dispatch:  # Allows manual triggering of the workflow
 
 jobs:
@@ -13,7 +13,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v3
       with:
-        ref: develop  # Checkout the develop branch
+        ref: master  # Checkout the develop branch
 
     - name: Create Pull Request
       id: create_pr
@@ -21,7 +21,7 @@ jobs:
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         base: test  # Target branch
-        head: develop  # Source branch
+        head: master  # Source branch
         title: 'Daily PR from Develop to Release'
         body: 'This PR is automatically created by the GitHub Actions workflow.'
         branch: 'auto-develop-to-release'  # Optional: Branch name for the PR
